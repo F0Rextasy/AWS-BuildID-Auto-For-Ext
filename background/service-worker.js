@@ -512,7 +512,28 @@ async function runSessionRegistration(session) {
       console.log(`[Session ${session.id}] 指纹已生成: language=${fingerprint.languages[0]}, timezone=${fingerprint.timezone}, screen=${fingerprint.screen.width}x${fingerprint.screen.height}, ua=${fingerprint.userAgent.substring(0, 60)}...`);
     }
 
-    // 步骤 5: 打开无痕窗口（使用锁防止同时创建多个窗口）
+    // 步骤 5: 打开无痕窗口 → 设置代理 → 加载页面（支持代理失败重试）
+    const maxProxyRetries = useProxy ? 3 : 1;
+    let pageLoaded = false;
+    const deadProxies = new Set(); // 跨重试轮次共享，避免重复使用不可用代理
+
+    for (let retryRound = 0; retryRound < maxProxyRetries; retryRound++) {
+      if (retryRound > 0) {
+        console.log(`[Session ${session.id}] 第 ${retryRound + 1} 次重试，更换代理重新加载...`);
+        updateSession(session.id, { step: `更换代理重试 (${retryRound + 1}/${maxProxyRetries})...` });
+        // 关闭上一轮的窗口
+        if (session.windowId) {
+          try { await chrome.windows.remove(session.windowId); } catch (e) { /* ignore */ }
+          session.windowId = null;
+          session.tabId = null;
+        }
+        clearIncognitoProxy();
+        // 重置代理相关状态
+        pendingProxy = null;
+        geoInfo = null;
+        fingerprint = null;
+      }
+
     updateSession(session.id, { step: '打开无痕窗口...' });
 
     await windowCreationLock;
@@ -556,7 +577,6 @@ async function runSessionRegistration(session) {
 
       // 代理模式：循环尝试代理，检测连通性，不通则跳过
       if (useProxy) {
-        const deadProxies = new Set();
         const maxAttempts = proxyManualList.length;
         let proxyConnected = false;
 
@@ -631,12 +651,23 @@ async function runSessionRegistration(session) {
 
       // 等待页面加载完成
       updateSession(session.id, { step: '等待页面加载...' });
+      let loadTimeout = false;
       try {
         await waitForTabLoad(session.tabId, 30000);
         console.log(`[Session ${session.id}] 页面已加载`);
       } catch (e) {
-        console.warn(`[Session ${session.id}] 等待页面加载:`, e.message);
-        // 即使超时也继续，content script 会处理
+        console.warn(`[Session ${session.id}] 等待页面加载: ${e.message}`);
+        loadTimeout = true;
+      }
+
+      // 代理模式下页面加载超时 → 标记当前代理为不可用，换代理重试
+      if (loadTimeout && useProxy && retryRound < maxProxyRetries - 1) {
+        if (pendingProxy) {
+          const failedKey = `${pendingProxy.scheme}://${pendingProxy.host}:${pendingProxy.port}`;
+          deadProxies.add(failedKey);
+          console.warn(`[Session ${session.id}] 页面加载超时，标记代理 ${failedKey} 不可用，将更换代理重试`);
+        }
+        continue;
       }
 
       // 注入随机指纹脚本
@@ -651,11 +682,11 @@ async function runSessionRegistration(session) {
         console.log(`[Session ${session.id}] 随机指纹注入成功`);
       } catch (error) {
         console.warn(`[Session ${session.id}] 指纹注入失败:`, error.message);
-        // 指纹注入失败不影响主流程，继续执行
       }
 
       // 额外等待一小段时间让 content script 初始化
       await new Promise(resolve => setTimeout(resolve, 1000));
+      pageLoaded = true;
 
     } catch (error) {
       console.error(`[Session ${session.id}] 创建无痕窗口错误:`, error);
@@ -671,11 +702,17 @@ async function runSessionRegistration(session) {
         errorMsg = error.message;
       }
 
+      releaseLock();
       throw new Error(errorMsg);
     } finally {
-      // 释放窗口创建锁
+      // 释放窗口创建锁（多次调用无害）
       releaseLock();
     }
+
+    // 加载成功，跳出重试循环
+    break;
+
+    } // end for retryRound
 
     // 步骤 6: 轮询 Token
     session.status = 'polling_token';
