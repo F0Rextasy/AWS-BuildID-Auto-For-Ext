@@ -487,6 +487,49 @@ body {
   background: linear-gradient(135deg, #ff7b00, #e66a00);
 }
 
+.history-actions .delete-btn-record {
+  color: #999;
+  font-size: 12px;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.history-actions .delete-btn-record:hover {
+  color: #e53935;
+  background: #fde8e8;
+}
+
+.proxy-dead-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px;
+  font-size: 10px;
+  color: #999;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.proxy-dead-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.proxy-dead-item button {
+  border: none;
+  background: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+.proxy-dead-item button:hover {
+  color: #4caf50;
+}
+
 /* 底部 */
 .footer {
   margin-top: 12px;

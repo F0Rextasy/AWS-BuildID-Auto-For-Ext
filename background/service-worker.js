@@ -38,6 +38,9 @@ let proxyEnabled = false; // 是否启用代理提取
 let proxyManualList = []; // 手动代理列表（解析后）
 let proxyManualRaw = '';  // 手动代理原始文本
 let proxyRotateIndex = 0; // 轮换索引
+let proxyUsageLimit = 1;  // 单个代理使用次数上限
+let proxyUsageCount = 0;  // 当前代理已使用次数
+let proxyDeadSet = new Set(); // 全局不可用代理集合（跨会话持久化）
 
 // MoeMail 配置
 let moemailApiUrl = 'https://';  // API 地址
@@ -134,13 +137,34 @@ function parseProxyList(raw) {
 }
 
 /**
- * 获取下一个轮换代理
+ * 获取下一个轮换代理（跳过已标记不可用的，支持单代理多次使用）
+ * @param {Set} deadSet - 已标记不可用的代理 key 集合
  */
-function getNextProxy() {
+function getNextProxy(deadSet) {
   if (proxyManualList.length === 0) return null;
-  const proxy = proxyManualList[proxyRotateIndex % proxyManualList.length];
-  proxyRotateIndex++;
-  return proxy;
+  const total = proxyManualList.length;
+
+  // 当前代理未用满次数，继续使用
+  if (proxyUsageCount < proxyUsageLimit && proxyRotateIndex > 0) {
+    const currentIdx = (proxyRotateIndex - 1) % total;
+    const proxy = proxyManualList[currentIdx];
+    const key = `${proxy.scheme}://${proxy.host}:${proxy.port}`;
+    if (!deadSet || !deadSet.has(key)) {
+      proxyUsageCount++;
+      return proxy;
+    }
+  }
+
+  // 轮换到下一个可用代理
+  for (let i = 0; i < total; i++) {
+    const proxy = proxyManualList[proxyRotateIndex % total];
+    proxyRotateIndex++;
+    const key = `${proxy.scheme}://${proxy.host}:${proxy.port}`;
+    if (deadSet && deadSet.has(key)) continue;
+    proxyUsageCount = 1;
+    return proxy;
+  }
+  return null;
 }
 
 /**
@@ -192,6 +216,33 @@ function applyProxyToIncognito(proxy) {
 function clearIncognitoProxy() {
   chrome.proxy.settings.clear({ scope: 'incognito_session_only' });
   console.log('[Service Worker] 已清除无痕代理');
+}
+
+/**
+ * 标记代理为不可用（持久化）
+ */
+function markProxyDead(proxyKey) {
+  proxyDeadSet.add(proxyKey);
+  chrome.storage.local.set({ proxyDeadList: [...proxyDeadSet] });
+  broadcastState();
+}
+
+/**
+ * 从不可用列表中移除单个代理
+ */
+function reviveProxy(proxyKey) {
+  proxyDeadSet.delete(proxyKey);
+  chrome.storage.local.set({ proxyDeadList: [...proxyDeadSet] });
+  broadcastState();
+}
+
+/**
+ * 清空所有不可用代理
+ */
+function clearDeadProxies() {
+  proxyDeadSet.clear();
+  chrome.storage.local.set({ proxyDeadList: [] });
+  broadcastState();
 }
 
 // ============== 全局状态 ==============
@@ -484,15 +535,10 @@ async function runSessionRegistration(session) {
     let geoInfo = null;
     let pendingProxy = null;
     let fingerprint = null;
-
-    if (proxyEnabled && proxyManualList.length > 0) {
-      pendingProxy = getNextProxy();
-      session.proxy = pendingProxy;
-      console.log(`[Session ${session.id}] 代理模式: ${pendingProxy.scheme}://${pendingProxy.host}:${pendingProxy.port}，指纹将在检测代理 IP 后生成`);
-    }
+    const useProxy = proxyEnabled && proxyManualList.length > 0;
 
     // 无代理模式：直接检测 IP → 生成指纹
-    if (!pendingProxy) {
+    if (!useProxy) {
       updateSession(session.id, { step: '检测 IP 地理位置...' });
       try {
         geoInfo = await detectGeoByIp();
@@ -510,7 +556,27 @@ async function runSessionRegistration(session) {
       console.log(`[Session ${session.id}] 指纹已生成: language=${fingerprint.languages[0]}, timezone=${fingerprint.timezone}, screen=${fingerprint.screen.width}x${fingerprint.screen.height}, ua=${fingerprint.userAgent.substring(0, 60)}...`);
     }
 
-    // 步骤 5: 打开无痕窗口（使用锁防止同时创建多个窗口）
+    // 步骤 5: 打开无痕窗口 → 设置代理 → 加载页面（支持代理失败重试）
+    const maxProxyRetries = useProxy ? 3 : 1;
+    let pageLoaded = false;
+
+    for (let retryRound = 0; retryRound < maxProxyRetries; retryRound++) {
+      if (retryRound > 0) {
+        console.log(`[Session ${session.id}] 第 ${retryRound + 1} 次重试，更换代理重新加载...`);
+        updateSession(session.id, { step: `更换代理重试 (${retryRound + 1}/${maxProxyRetries})...` });
+        // 关闭上一轮的窗口
+        if (session.windowId) {
+          try { await chrome.windows.remove(session.windowId); } catch (e) { /* ignore */ }
+          session.windowId = null;
+          session.tabId = null;
+        }
+        clearIncognitoProxy();
+        // 重置代理相关状态
+        pendingProxy = null;
+        geoInfo = null;
+        fingerprint = null;
+      }
+
     updateSession(session.id, { step: '打开无痕窗口...' });
 
     await windowCreationLock;
@@ -518,8 +584,8 @@ async function runSessionRegistration(session) {
     windowCreationLock = new Promise(resolve => { releaseLock = resolve; });
 
     try {
-      // 代理模式：先开任意页面创建无痕窗口
-      const initialUrl = pendingProxy ? 'https://ipinfo.io/json' : authInfo.verificationUriComplete;
+      // 代理模式：先开 IP 检测页创建无痕窗口
+      const initialUrl = useProxy ? 'https://ipinfo.io/json' : authInfo.verificationUriComplete;
       console.log(`[Session ${session.id}] 准备创建无痕窗口，URL:`, initialUrl);
 
       const window = await chrome.windows.create({
@@ -552,47 +618,69 @@ async function runSessionRegistration(session) {
       session.tabId = window.tabs[0].id;
       console.log(`[Session ${session.id}] 无痕窗口创建成功: windowId=${window.id}, tabId=${session.tabId}`);
 
-      // 代理模式：设置代理 → 检测代理 IP → 生成指纹 → 导航到目标
-      if (pendingProxy) {
-        updateSession(session.id, { step: '设置代理...' });
-        applyProxyToIncognito(pendingProxy);
-        console.log(`[Session ${session.id}] 代理已设置: ${pendingProxy.scheme}://${pendingProxy.host}:${pendingProxy.port}`);
+      // 代理模式：循环尝试代理，检测连通性，不通则跳过
+      if (useProxy) {
+        const maxAttempts = proxyManualList.length;
+        let proxyConnected = false;
 
-        // 导航到 IP 检测页（此时走代理），支持备用 API
-        updateSession(session.id, { step: '检测代理 IP 地理位置...' });
         const ipApis = [
           { url: 'https://ipinfo.io/json', parse: d => d.country ? { countryCode: d.country, timezone: d.timezone, ip: d.ip } : null },
           { url: 'https://ipwhois.app/json/', parse: d => d.country_code ? { countryCode: d.country_code, timezone: d.timezone, ip: d.ip } : null },
           { url: 'https://api.ip.sb/geoip', parse: d => d.country_code ? { countryCode: d.country_code, timezone: d.timezone, ip: d.ip } : null }
         ];
-        for (const api of ipApis) {
-          console.log(`[Session ${session.id}] 尝试 IP 检测: ${api.url}`);
-          await chrome.tabs.update(session.tabId, { url: api.url });
-          try {
-            await waitForTabLoad(session.tabId, 15000);
-            const [result] = await chrome.scripting.executeScript({
-              target: { tabId: session.tabId },
-              func: () => {
-                try { return JSON.parse(document.body.innerText); } catch (e) { return null; }
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          pendingProxy = getNextProxy(proxyDeadSet);
+          if (!pendingProxy) break;
+
+          const proxyKey = `${pendingProxy.scheme}://${pendingProxy.host}:${pendingProxy.port}`;
+          updateSession(session.id, { step: `测试代理 (${attempt + 1}/${maxAttempts}): ${proxyKey}` });
+          console.log(`[Session ${session.id}] 测试代理 [${attempt + 1}/${maxAttempts}]: ${proxyKey}`);
+
+          applyProxyToIncognito(pendingProxy);
+
+          // 依次尝试 IP 检测 API 验证代理连通性
+          let connected = false;
+          for (const api of ipApis) {
+            try {
+              await chrome.tabs.update(session.tabId, { url: api.url });
+              await waitForTabLoad(session.tabId, 10000);
+              const [result] = await chrome.scripting.executeScript({
+                target: { tabId: session.tabId },
+                func: () => {
+                  try { return JSON.parse(document.body.innerText); } catch (e) { return null; }
+                }
+              });
+              const parsed = result?.result ? api.parse(result.result) : null;
+              if (parsed) {
+                geoInfo = parsed;
+                console.log(`[Session ${session.id}] 代理连通 [${proxyKey}]: country=${geoInfo.countryCode}, timezone=${geoInfo.timezone}, ip=${geoInfo.ip} (via ${api.url})`);
+                connected = true;
+                break;
               }
-            });
-            const parsed = result?.result ? api.parse(result.result) : null;
-            if (parsed) {
-              geoInfo = parsed;
-              console.log(`[Session ${session.id}] 代理 IP 地理位置: country=${geoInfo.countryCode}, timezone=${geoInfo.timezone}, ip=${geoInfo.ip} (via ${api.url})`);
-              break;
-            } else {
-              console.warn(`[Session ${session.id}] IP 检测返回数据无效 (${api.url}):`, result?.result);
+            } catch (e) {
+              // 该 API 失败，尝试下一个
             }
-          } catch (e) {
-            console.warn(`[Session ${session.id}] IP 检测失败 (${api.url}): ${e.message}`);
+          }
+
+          if (connected) {
+            proxyConnected = true;
+            session.proxy = pendingProxy;
+            console.log(`[Session ${session.id}] 使用代理: ${proxyKey}`);
+            break;
+          } else {
+            console.warn(`[Session ${session.id}] 代理不可用: ${proxyKey}，跳过`);
+            markProxyDead(proxyKey);
           }
         }
-        if (!geoInfo) {
-          console.warn(`[Session ${session.id}] 所有 IP 检测 API 均失败，将使用纯随机指纹`);
+
+        if (!proxyConnected) {
+          console.warn(`[Session ${session.id}] 所有代理均不可用 (${proxyDeadSet.size} 个)，切换为直连模式`);
+          pendingProxy = null;
+          clearIncognitoProxy();
         }
 
-        // 基于代理 IP 生成指纹
+        // 生成指纹
         updateSession(session.id, { step: '生成随机指纹...' });
         fingerprint = generateRandomFingerprint(geoInfo);
         session.fingerprint = fingerprint;
@@ -606,12 +694,23 @@ async function runSessionRegistration(session) {
 
       // 等待页面加载完成
       updateSession(session.id, { step: '等待页面加载...' });
+      let loadTimeout = false;
       try {
         await waitForTabLoad(session.tabId, 30000);
         console.log(`[Session ${session.id}] 页面已加载`);
       } catch (e) {
-        console.warn(`[Session ${session.id}] 等待页面加载:`, e.message);
-        // 即使超时也继续，content script 会处理
+        console.warn(`[Session ${session.id}] 等待页面加载: ${e.message}`);
+        loadTimeout = true;
+      }
+
+      // 代理模式下页面加载超时 → 标记当前代理为不可用，换代理重试
+      if (loadTimeout && useProxy && retryRound < maxProxyRetries - 1) {
+        if (pendingProxy) {
+          const failedKey = `${pendingProxy.scheme}://${pendingProxy.host}:${pendingProxy.port}`;
+          markProxyDead(failedKey);
+          console.warn(`[Session ${session.id}] 页面加载超时，标记代理 ${failedKey} 不可用，将更换代理重试`);
+        }
+        continue;
       }
 
       // 注入随机指纹脚本
@@ -626,11 +725,11 @@ async function runSessionRegistration(session) {
         console.log(`[Session ${session.id}] 随机指纹注入成功`);
       } catch (error) {
         console.warn(`[Session ${session.id}] 指纹注入失败:`, error.message);
-        // 指纹注入失败不影响主流程，继续执行
       }
 
       // 额外等待一小段时间让 content script 初始化
       await new Promise(resolve => setTimeout(resolve, 1000));
+      pageLoaded = true;
 
     } catch (error) {
       console.error(`[Session ${session.id}] 创建无痕窗口错误:`, error);
@@ -646,11 +745,17 @@ async function runSessionRegistration(session) {
         errorMsg = error.message;
       }
 
+      releaseLock();
       throw new Error(errorMsg);
     } finally {
-      // 释放窗口创建锁
+      // 释放窗口创建锁（多次调用无害）
       releaseLock();
     }
+
+    // 加载成功，跳出重试循环
+    break;
+
+    } // end for retryRound
 
     // 步骤 6: 轮询 Token
     session.status = 'polling_token';
@@ -1298,12 +1403,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.storage.local.set({ proxyManualRaw });
         console.log('[Service Worker] 解析手动代理列表:', proxyManualList.length, '个');
       }
-      console.log('[Service Worker] 设置代理配置:', { proxyApiUrl, proxyEnabled, manualCount: proxyManualList.length });
+      if (message.usageLimit !== undefined) {
+        proxyUsageLimit = Math.max(1, parseInt(message.usageLimit) || 1);
+        proxyUsageCount = 0;
+        chrome.storage.local.set({ proxyUsageLimit });
+        console.log('[Service Worker] 设置单代理使用次数:', proxyUsageLimit);
+      }
+      console.log('[Service Worker] 设置代理配置:', { proxyApiUrl, proxyEnabled, manualCount: proxyManualList.length, usageLimit: proxyUsageLimit });
       sendResponse({ success: true, parsedCount: proxyManualList.length });
       break;
 
     case 'GET_PROXY_CONFIG':
-      sendResponse({ proxyApiUrl, proxyApiKey, proxyEnabled, proxyManualRaw, parsedCount: proxyManualList.length });
+      sendResponse({ proxyApiUrl, proxyApiKey, proxyEnabled, proxyManualRaw, parsedCount: proxyManualList.length, proxyUsageLimit, deadProxies: [...proxyDeadSet] });
+      break;
+
+    case 'REVIVE_PROXY':
+      reviveProxy(message.proxyKey);
+      console.log('[Service Worker] 恢复代理:', message.proxyKey);
+      sendResponse({ success: true, deadProxies: [...proxyDeadSet] });
+      break;
+
+    case 'CLEAR_DEAD_PROXIES':
+      clearDeadProxies();
+      console.log('[Service Worker] 已清空所有不可用代理');
+      sendResponse({ success: true });
       break;
 
     case 'TEST_PROXY_API':
@@ -1473,6 +1596,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
       break;
 
+    case 'DELETE_HISTORY_ITEM':
+      registrationHistory = registrationHistory.filter(r => r.id !== message.id);
+      chrome.storage.local.set({ registrationHistory });
+      sendResponse({ success: true });
+      break;
+
     case 'EXPORT_HISTORY':
       sendResponse({ history: registrationHistory });
       break;
@@ -1607,7 +1736,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // 恢复历史记录、Gmail API 配置和邮箱渠道
-chrome.storage.local.get(['registrationHistory', 'gmailApiAuthorized', 'gmailSenderFilter', 'mailProvider', 'gptmailApiKey', 'duckMailApiKey', 'duckMailDomain', 'moemailApiUrl', 'moemailApiKey', 'moemailDomain', 'moemailPrefix', 'moemailRandomLength', 'moemailDuration', 'denyAccess', 'proxyApiUrl', 'proxyApiKey', 'proxyEnabled', 'proxyManualRaw']).then((stored) => {
+chrome.storage.local.get(['registrationHistory', 'gmailApiAuthorized', 'gmailSenderFilter', 'mailProvider', 'gptmailApiKey', 'duckMailApiKey', 'duckMailDomain', 'moemailApiUrl', 'moemailApiKey', 'moemailDomain', 'moemailPrefix', 'moemailRandomLength', 'moemailDuration', 'denyAccess', 'proxyApiUrl', 'proxyApiKey', 'proxyEnabled', 'proxyManualRaw', 'proxyUsageLimit', 'proxyDeadList']).then((stored) => {
   if (stored.registrationHistory) {
     registrationHistory = stored.registrationHistory;
     console.log('[Service Worker] 恢复历史记录:', registrationHistory.length, '条');
@@ -1683,6 +1812,16 @@ chrome.storage.local.get(['registrationHistory', 'gmailApiAuthorized', 'gmailSen
     proxyManualRaw = stored.proxyManualRaw;
     proxyManualList = parseProxyList(proxyManualRaw);
     console.log('[Service Worker] 恢复手动代理列表:', proxyManualList.length, '个');
+  }
+  if (stored.proxyUsageLimit !== undefined) {
+    proxyUsageLimit = Math.max(1, parseInt(stored.proxyUsageLimit) || 1);
+    console.log('[Service Worker] 恢复单代理使用次数:', proxyUsageLimit);
+  }
+  if (stored.proxyDeadList && Array.isArray(stored.proxyDeadList)) {
+    proxyDeadSet = new Set(stored.proxyDeadList);
+    if (proxyDeadSet.size > 0) {
+      console.log('[Service Worker] 恢复不可用代理:', proxyDeadSet.size, '个');
+    }
   }
 
   // 恢复 Gmail API 配置

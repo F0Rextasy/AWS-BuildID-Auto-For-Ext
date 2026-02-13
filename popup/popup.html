@@ -178,6 +178,10 @@
           <textarea id="proxy-manual-list" placeholder="手动代理列表（每行一个）&#10;格式: socks5://ip:port&#10;http://user:pass@ip:port&#10;ip:port" class="gmail-input" style="flex: 1; min-height: 60px; resize: vertical; font-size: 11px;"></textarea>
         </div>
         <p id="proxy-parsed-count" class="provider-desc" style="margin-top: 2px; font-size: 11px;"></p>
+        <div class="gmail-input-row" style="margin-top: 4px; align-items: center;">
+          <label style="font-size: 11px; white-space: nowrap;">单代理注册次数:</label>
+          <input type="number" id="proxy-usage-limit" min="1" max="100" value="1" class="gmail-input" style="width: 50px; text-align: center;">
+        </div>
         <div class="gmail-input-row" style="margin-top: 4px;">
           <input type="text" id="proxy-api-url" placeholder="代理提取 API 地址（可选）" class="gmail-input" style="flex: 1;">
         </div>
@@ -186,6 +190,13 @@
           <button id="proxy-test-btn" class="gmail-btn">测试</button>
         </div>
         <p id="proxy-status" class="provider-desc" style="margin-top: 4px;"></p>
+        <div id="proxy-dead-section" style="margin-top: 6px; display: none;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 11px; color: #e53935;" id="proxy-dead-count"></span>
+            <button id="proxy-clear-dead-btn" class="gmail-btn" style="font-size: 10px; padding: 1px 6px;">全部恢复</button>
+          </div>
+          <div id="proxy-dead-list" style="max-height: 100px; overflow-y: auto; margin-top: 4px;"></div>
+        </div>
       </div>
     </div>
 

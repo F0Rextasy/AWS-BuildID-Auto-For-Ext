@@ -269,6 +269,7 @@ function renderHistory(history) {
         ${item.success && item.token ? `<button class="kiro-btn" data-id="${item.id}" title="同步至 Kiro IDE">Kiro</button>` : ''}
         ${item.success && item.token ? `<button class="copy-json-btn" data-id="${item.id}" title="复制为 JSON">JSON</button>` : ''}
         <button class="copy-btn-record" data-id="${item.id}">复制</button>
+        <button class="delete-btn-record" data-id="${item.id}" title="删除此记录">&#x2715;</button>
       </div>
     </div>
   `;
@@ -295,6 +296,16 @@ historyList.addEventListener('click', async (e) => {
   if (target.classList.contains('copy-btn-record')) {
     const id = target.getAttribute('data-id');
     await copyRecord(id);
+  }
+
+  // 删除按钮
+  if (target.classList.contains('delete-btn-record')) {
+    const id = target.getAttribute('data-id');
+    await chrome.runtime.sendMessage({ type: 'DELETE_HISTORY_ITEM', id });
+    target.closest('.history-item').remove();
+    if (historyList.children.length === 0) {
+      historyList.innerHTML = '<div class="history-empty">暂无记录</div>';
+    }
   }
 });
 
@@ -1638,6 +1649,7 @@ async function init() {
   const proxyApiKeyInput = document.getElementById('proxy-api-key');
   const proxyTestBtn = document.getElementById('proxy-test-btn');
   const proxyStatus = document.getElementById('proxy-status');
+  const proxyUsageLimitInput = document.getElementById('proxy-usage-limit');
 
   chrome.runtime.sendMessage({ type: 'GET_PROXY_CONFIG' }).then(res => {
     if (res) {
@@ -1646,6 +1658,8 @@ async function init() {
       proxyApiKeyInput.value = res.proxyApiKey || '';
       proxyManualListInput.value = res.proxyManualRaw || '';
       proxyConfigPanel.style.display = res.proxyEnabled ? 'block' : 'none';
+      proxyUsageLimitInput.value = res.proxyUsageLimit || 1;
+      if (res.deadProxies) renderDeadProxies(res.deadProxies);
       if (res.parsedCount > 0) {
         proxyParsedCount.textContent = `已解析 ${res.parsedCount} 个代理`;
         proxyParsedCount.style.color = 'green';
@@ -1673,6 +1687,9 @@ async function init() {
   proxyApiKeyInput.addEventListener('blur', () => {
     chrome.runtime.sendMessage({ type: 'SET_PROXY_CONFIG', apiKey: proxyApiKeyInput.value });
   });
+  proxyUsageLimitInput.addEventListener('change', () => {
+    chrome.runtime.sendMessage({ type: 'SET_PROXY_CONFIG', usageLimit: parseInt(proxyUsageLimitInput.value) || 1 });
+  });
 
   proxyTestBtn.addEventListener('click', async () => {
     proxyStatus.textContent = '测试中...';
@@ -1694,6 +1711,37 @@ async function init() {
       proxyStatus.textContent = '失败: ' + e.message;
       proxyStatus.style.color = 'red';
     }
+  });
+
+  // 不可用代理管理
+  const proxyDeadSection = document.getElementById('proxy-dead-section');
+  const proxyDeadCount = document.getElementById('proxy-dead-count');
+  const proxyDeadList = document.getElementById('proxy-dead-list');
+  const proxyClearDeadBtn = document.getElementById('proxy-clear-dead-btn');
+
+  function renderDeadProxies(deadList) {
+    if (!deadList || deadList.length === 0) {
+      proxyDeadSection.style.display = 'none';
+      return;
+    }
+    proxyDeadSection.style.display = 'block';
+    proxyDeadCount.textContent = `${deadList.length} 个代理不可用`;
+    proxyDeadList.innerHTML = deadList.map(key =>
+      `<div class="proxy-dead-item"><span title="${key}">${key}</span><button data-key="${key}" title="恢复此代理">&#x2713;</button></div>`
+    ).join('');
+  }
+
+  proxyDeadList.addEventListener('click', async (e) => {
+    if (e.target.tagName === 'BUTTON') {
+      const key = e.target.getAttribute('data-key');
+      const res = await chrome.runtime.sendMessage({ type: 'REVIVE_PROXY', proxyKey: key });
+      if (res?.deadProxies) renderDeadProxies(res.deadProxies);
+    }
+  });
+
+  proxyClearDeadBtn.addEventListener('click', async () => {
+    await chrome.runtime.sendMessage({ type: 'CLEAR_DEAD_PROXIES' });
+    renderDeadProxies([]);
   });
 
   // 绑定复制按钮事件
