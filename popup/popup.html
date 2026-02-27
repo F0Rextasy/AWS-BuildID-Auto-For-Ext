@@ -9,8 +9,20 @@
 <body>
   <div class="container">
     <header class="header">
-      <h1 data-i18n="appTitle">AWS 自动注册</h1>
-      <p class="subtitle" data-i18n="appSubtitle">Builder ID 一键注册工具</p>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h1 data-i18n="appTitle">AWS 自动注册</h1>
+          <p class="subtitle" data-i18n="appSubtitle">Builder ID 一键注册工具</p>
+        </div>
+        <div class="language-selector">
+          <label for="language-select" data-i18n="languageLabel" style="font-size: 11px; margin-right: 4px;">语言</label>
+          <select id="language-select" style="font-size: 11px; padding: 2px 4px;">
+            <option value="zh_CN">中文</option>
+            <option value="en">English</option>
+            <option value="tr">Türkçe</option>
+          </select>
+        </div>
+      </div>
     </header>
 
     <!-- 状态显示区域 -->
@@ -57,58 +69,58 @@
       <!-- Gmail 配置面板 -->
       <div id="gmail-config-panel" class="provider-panel">
         <div class="gmail-input-row">
-          <input type="email" id="gmail-address" placeholder="输入你的 Gmail 地址" class="gmail-input">
-          <button id="gmail-save-btn" class="btn-small">保存</button>
+          <input type="email" id="gmail-address" data-i18n-placeholder="gmailPlaceholder" placeholder="输入你的 Gmail 地址" class="gmail-input">
+          <button id="gmail-save-btn" class="btn-small" data-i18n="btnSave">保存</button>
         </div>
 
         <!-- Gmail API 授权 -->
         <div class="gmail-oauth-row">
-          <button id="gmail-auth-btn" class="btn-small btn-small-primary">授权 Gmail API</button>
+          <button id="gmail-auth-btn" class="btn-small btn-small-primary" data-i18n="btnAuthorize">授权 Gmail API</button>
           <span id="gmail-auth-status" class="gmail-auth-status"></span>
         </div>
 
         <!-- 验证码发件人配置 -->
         <div class="gmail-sender-row">
-          <input type="text" id="gmail-sender" placeholder="验证码发件人" value="no-reply@signin.aws" class="gmail-input gmail-sender-input">
-          <button id="gmail-sender-save-btn" class="btn-small">保存</button>
+          <input type="text" id="gmail-sender" data-i18n-placeholder="gmailSenderPlaceholder" placeholder="验证码发件人" value="no-reply@signin.aws" class="gmail-input gmail-sender-input">
+          <button id="gmail-sender-save-btn" class="btn-small" data-i18n="btnSave">保存</button>
         </div>
 
-        <p class="gmail-hint">授权后可自动获取验证码，无需手动填写</p>
+        <p class="gmail-hint" data-i18n="gmailHint">授权后可自动获取验证码，无需手动填写</p>
         <p class="gmail-status" id="gmail-status"></p>
       </div>
 
       <!-- Guerrilla Mail 配置面板 -->
       <div id="guerrilla-config-panel" class="provider-panel" style="display: none;">
         <div class="guerrilla-info">
-          <p class="provider-hint success">✓ 无需配置，自动生成临时邮箱</p>
-          <p class="provider-desc">每次注册自动获取新的临时邮箱地址，验证码自动获取</p>
+          <p class="provider-hint success" data-i18n="guerrillaInfo">✓ 无需配置，自动生成临时邮箱</p>
+          <p class="provider-desc" data-i18n="guerrillaDesc">每次注册自动获取新的临时邮箱地址，验证码自动获取</p>
         </div>
       </div>
 
       <!-- GPTMail 配置面板 -->
       <div id="gptmail-config-panel" class="provider-panel" style="display: none;">
         <div class="gmail-input-row">
-          <input type="text" id="gptmail-apikey" placeholder="API Key (默认: gpt-test)" class="gmail-input" value="gpt-test">
-          <button id="gptmail-save-btn" class="btn-small">保存</button>
+          <input type="text" id="gptmail-apikey" data-i18n-placeholder="gptmailApiKeyPlaceholder" placeholder="API Key (默认: gpt-test)" class="gmail-input" value="gpt-test">
+          <button id="gptmail-save-btn" class="btn-small" data-i18n="btnSave">保存</button>
         </div>
-        <p class="provider-hint success">✓ 自动随机生成邮箱，验证码自动获取</p>
-        <p class="provider-desc">默认使用测试 Key，每日限 20 万次调用</p>
+        <p class="provider-hint success" data-i18n="gptmailHint">✓ 自动随机生成邮箱，验证码自动获取</p>
+        <p class="provider-desc" data-i18n="gptmailDesc">默认使用测试 Key，每日限 20 万次调用</p>
       </div>
 
       <!-- DuckMail 配置面板 -->
       <div id="duckmail-config-panel" class="provider-panel" style="display: none;">
         <div class="gmail-input-row">
-          <input type="text" id="duckmail-apikey" placeholder="API Key (可选，以 dk_ 开头)" class="gmail-input">
-          <button id="duckmail-apikey-save-btn" class="btn-small">保存</button>
+          <input type="text" id="duckmail-apikey" data-i18n-placeholder="duckmailApiKeyPlaceholder" placeholder="API Key (可选，以 dk_ 开头)" class="gmail-input">
+          <button id="duckmail-apikey-save-btn" class="btn-small" data-i18n="btnSave">保存</button>
         </div>
         <div class="gmail-input-row" style="margin-top: 6px;">
           <select id="duckmail-domain-select" class="provider-select" style="flex: 1;">
-            <option value="">加载域名中...</option>
+            <option value="" data-i18n="loadingDomains">加载域名中...</option>
           </select>
-          <button id="duckmail-refresh-domains-btn" class="btn-small">刷新</button>
+          <button id="duckmail-refresh-domains-btn" class="btn-small" data-i18n="btnRefresh">刷新</button>
         </div>
-        <p class="provider-hint success">✓ 随机用户名，验证码自动获取</p>
-        <p class="provider-desc">不填 API Key 可用公共域名，填写后可用私有域名</p>
+        <p class="provider-hint success" data-i18n="duckmailHint">✓ 随机用户名，验证码自动获取</p>
+        <p class="provider-desc" data-i18n="duckmailDesc">不填 API Key 可用公共域名，填写后可用私有域名</p>
       </div>
 
       <!-- MoeMail 配置面板 -->

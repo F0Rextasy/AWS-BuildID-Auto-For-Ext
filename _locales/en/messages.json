@@ -268,5 +268,17 @@
   },
   "footerText": {
     "message": "Incognito mode must be enabled in extension settings"
+  },
+  "languageLabel": {
+    "message": "Language"
+  },
+  "languageChinese": {
+    "message": "中文"
+  },
+  "languageEnglish": {
+    "message": "English"
+  },
+  "languageTurkish": {
+    "message": "Türkçe"
   }
 }

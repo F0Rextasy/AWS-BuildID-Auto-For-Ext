@@ -3,8 +3,22 @@
  * 支持自定义循环次数和多窗口并发
  */
 
-// i18n helper function
-const i18n = (key) => chrome.i18n.getMessage(key) || key;
+// i18n helper function - use window.i18n from i18n.js
+const i18n = (key) => window.i18n ? window.i18n(key) : key;
+
+// Listen for language changes
+window.addEventListener('languageChanged', () => {
+  // Refresh UI with new language
+  const currentState = {
+    status: statusText.textContent,
+    history: []
+  };
+  chrome.runtime.sendMessage({ type: 'GET_STATE' }).then(response => {
+    if (response?.state) {
+      updateUI(response.state);
+    }
+  });
+});
 
 // DOM 元素
 const statusDot = document.getElementById('status-dot');

@@ -268,5 +268,17 @@
   },
   "footerText": {
     "message": "无痕模式需在扩展设置中启用"
+  },
+  "languageLabel": {
+    "message": "语言"
+  },
+  "languageChinese": {
+    "message": "中文"
+  },
+  "languageEnglish": {
+    "message": "English"
+  },
+  "languageTurkish": {
+    "message": "Türkçe"
   }
 }

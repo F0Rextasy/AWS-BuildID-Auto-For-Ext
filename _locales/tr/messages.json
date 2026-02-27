@@ -268,5 +268,17 @@
   },
   "footerText": {
     "message": "Gizli mod eklenti ayarlarından etkinleştirilmelidir"
+  },
+  "languageLabel": {
+    "message": "Dil"
+  },
+  "languageChinese": {
+    "message": "中文"
+  },
+  "languageEnglish": {
+    "message": "English"
+  },
+  "languageTurkish": {
+    "message": "Türkçe"
   }
 }
