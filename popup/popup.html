@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,15 +9,15 @@
 <body>
   <div class="container">
     <header class="header">
-      <h1>AWS 自动注册</h1>
-      <p class="subtitle">Builder ID 一键注册工具</p>
+      <h1 data-i18n="appTitle">AWS 自动注册</h1>
+      <p class="subtitle" data-i18n="appSubtitle">Builder ID 一键注册工具</p>
     </header>
 
     <!-- 状态显示区域 -->
     <div id="status-section" class="section">
       <div class="status-indicator">
         <span id="status-dot" class="dot idle"></span>
-        <span id="status-text">准备就绪</span>
+        <span id="status-text" data-i18n="statusReady">准备就绪</span>
         <span id="counter" class="counter" style="display: none;"></span>
       </div>
       <div id="step-text" class="step-text"></div>
@@ -26,31 +26,31 @@
     <!-- 验证状态提示 -->
     <div id="validate-section" class="section validate-section" style="display: none;">
       <div class="validate-info">
-        <span id="validate-text">正在验证...</span>
+        <span id="validate-text" data-i18n="statusValidating">正在验证...</span>
       </div>
     </div>
 
     <!-- 并发会话状态 -->
     <div id="sessions-section" class="section" style="display: none;">
-      <h2>运行中的会话</h2>
+      <h2 data-i18n="sessionsTitle">运行中的会话</h2>
       <div id="sessions-list" class="sessions-list"></div>
     </div>
 
     <!-- 邮箱渠道配置区域 -->
     <div id="mail-section" class="section mail-section">
       <div class="section-header">
-        <h2>邮箱配置</h2>
+        <h2 data-i18n="mailConfigTitle">邮箱配置</h2>
       </div>
 
       <!-- 渠道选择 -->
       <div class="provider-select-row">
-        <label for="mail-provider-select">邮箱渠道</label>
+        <label for="mail-provider-select" data-i18n="mailProviderLabel">邮箱渠道</label>
         <select id="mail-provider-select" class="provider-select">
-          <option value="gmail">Gmail (需配置)</option>
-          <option value="guerrilla">Guerrilla Mail (免配置)</option>
-          <option value="gptmail">GPTMail (需 API Key)</option>
-          <option value="duckmail">DuckMail (可选 API Key)</option>
-          <option value="moemail">MoeMail (需 API Key)</option>
+          <option value="gmail" data-i18n="mailProviderGmail">Gmail (需配置)</option>
+          <option value="guerrilla" data-i18n="mailProviderGuerrilla">Guerrilla Mail (免配置)</option>
+          <option value="gptmail" data-i18n="mailProviderGptmail">GPTMail (需 API Key)</option>
+          <option value="duckmail" data-i18n="mailProviderDuckmail">DuckMail (可选 API Key)</option>
+          <option value="moemail" data-i18n="mailProviderMoemail">MoeMail (需 API Key)</option>
         </select>
       </div>
 
@@ -302,6 +302,7 @@
     </footer>
   </div>
 
+  <script src="i18n.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
